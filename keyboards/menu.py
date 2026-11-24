@@ -3,7 +3,7 @@ from pykodaribot import InlineKeyboardMarkup, InlineKeyboardButton
 TOPICS_PER_PAGE = 5
 
 
-def subjects_keyboard(catalog: dict) -> InlineKeyboardMarkup:
+def subjects_keyboard(catalog: dict, mistakes_count: int = 0) -> InlineKeyboardMarkup:
     items = list(catalog.items())
     buttons = []
     for i in range(0, len(items), 2):
@@ -13,8 +13,10 @@ def subjects_keyboard(catalog: dict) -> InlineKeyboardMarkup:
         ]
         buttons.append(row)
 
+    mistakes_label = f"❌ Ошибки ({mistakes_count})" if mistakes_count > 0 else "❌ Ошибки"
     buttons.append([
         InlineKeyboardButton(text="🎯 Тренажёр", callback_data="trainer_menu"),
+        InlineKeyboardButton(text=mistakes_label, callback_data="mistakes:next"),
         InlineKeyboardButton(text="🏆 Лидеры", callback_data="leaderboard"),
     ])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -148,3 +150,20 @@ def trainer_after_answer_keyboard(
             InlineKeyboardButton(text="🏠 В меню", callback_data="menu"),
         ],
     ])
+
+
+def mistake_options_keyboard(
+    subject_key: str,
+    grade_key: str,
+    topic_key: str,
+    options: list[str],
+) -> InlineKeyboardMarkup:
+    buttons = [
+        [InlineKeyboardButton(text=opt, callback_data=f"m_ans:{subject_key}:{grade_key}:{topic_key}:{idx}")]
+        for idx, opt in enumerate(options)
+    ]
+    buttons.append([
+        InlineKeyboardButton(text="📖 Подсмотреть в шпаргалке", callback_data=f"topic:{subject_key}:{grade_key}:{topic_key}"),
+        InlineKeyboardButton(text="🏠 В меню", callback_data="menu"),
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)

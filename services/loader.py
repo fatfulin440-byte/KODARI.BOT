@@ -215,3 +215,94 @@ def get_leaderboard(limit: int = 10) -> list[dict]:
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
     return rows
+def init_mistakes_table():
+    """Создаёт таблицу для хранения ошибок учеников."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_mistakes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            subject_key TEXT NOT NULL,
+            grade_key TEXT NOT NULL,
+            topic_key TEXT NOT NULL,
+            UNIQUE(user_id, subject_key, grade_key, topic_key)
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def add_mistake(user_id: int, subject_key: str, grade_key: str, topic_key: str):
+    """Записывает тему в список ошибок ученика (если её там ещё нет)."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT OR IGNORE INTO user_mistakes (user_id, subject_key, grade_key, topic_key)
+        VALUES (?, ?, ?, ?)
+        """,
+        (user_id, subject_key, grade_key, topic_key),
+    )
+    conn.commit()
+    conn.close()
+
+
+def remove_mistake(user_id: int, subject_key: str, grade_key: str, topic_key: str) -> bool:
+    """Удаляет тему из списка ошибок после правильного ответа. Возвращает True, если ошибка была закрыта."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        DELETE FROM user_mistakes
+        WHERE user_id = ? AND subject_key = ? AND grade_key = ? AND topic_key = ?
+        """,
+        (user_id, subject_key, grade_key, topic_key),
+    )
+    deleted = cur.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
+
+
+def get_mistakes_count(user_id: int) -> int:
+    """Возвращает количество незакрытых ошибок пользователя."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM user_mistakes WHERE user_id = ?", (user_id,))
+    count = cur.fetchone()[0]
+    conn.close()
+    return count
+
+
+def get_random_mistake_quiz(user_id: int) -> dict | None:
+    """Выбирает случайный вопрос из списка ошибок ученика."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT 
+            m.subject_key, m.grade_key, m.topic_key,
+            t.title AS topic_title, s.title AS subj_title,
+            q.question, q.options_json, q.correct_idx
+        FROM user_mistakes m
+        JOIN topics t ON t.subject_key = m.subject_key AND t.grade_key = m.grade_key AND t.topic_key = m.topic_key
+        JOIN subjects s ON s.key = m.subject_key
+        JOIN quizzes q ON q.topic_id = t.id
+        WHERE m.user_id = ?
+        ORDER BY RANDOM()
+        LIMIT 1
+    """, (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return None
+    return {
+        "subject_key": row["subject_key"],
+        "grade_key": row["grade_key"],
+        "topic_key": row["topic_key"],
+        "topic_title": row["topic_title"],
+        "subj_title": row["subj_title"],
+        "question": row["question"],
+        "options": json.loads(row["options_json"]),
+        "correct": row["correct_idx"],
+    }

@@ -6,9 +6,14 @@ from services.loader import (
     load_catalog,
     search_topics,
     init_stats_table,
+    init_mistakes_table,
     get_random_quiz,
     update_user_score,
     get_leaderboard,
+    add_mistake,
+    remove_mistake,
+    get_mistakes_count,
+    get_random_mistake_quiz,
 )
 from keyboards.menu import (
     subjects_keyboard,
@@ -20,19 +25,22 @@ from keyboards.menu import (
     trainer_filter_keyboard,
     trainer_options_keyboard,
     trainer_after_answer_keyboard,
+    mistake_options_keyboard,
 )
 
 router = Router()
 init_stats_table()
+init_mistakes_table()
 CATALOG = load_catalog()
 
 
 @router.message(command("start"))
 async def cmd_start(message: Message):
+    m_count = get_mistakes_count(message.from_user.id)
     await message.answer(
         text="📚 Школьный справочник для 9–11 классов.\n\n"
              "Выберите предмет из меню ниже или просто напишите слово для поиска (например: «дискриминант»):",
-        reply_markup=subjects_keyboard(CATALOG),
+        reply_markup=subjects_keyboard(CATALOG, m_count),
     )
 
 
@@ -43,11 +51,12 @@ async def noop_callback(call: CallbackQuery):
 
 @router.callback_query(callback_data("menu"))
 async def go_main_menu(call: CallbackQuery):
+    m_count = get_mistakes_count(call.from_user.id)
     await bot.edit_message_text(
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,
         text="📚 Школьный справочник для 9–11 классов.\nВыберите предмет:",
-        reply_markup=subjects_keyboard(CATALOG),
+        reply_markup=subjects_keyboard(CATALOG, m_count),
     )
     await call.answer()
 
@@ -126,11 +135,14 @@ async def check_quiz_answer(call: CallbackQuery):
     correct_text = quiz["options"][correct_idx]
 
     if chosen_idx == correct_idx:
-        result_text = f"✅ Верно!\n\nПравильный ответ: {correct_text}"
+        was_mistake = remove_mistake(call.from_user.id, subj_key, grade_key, topic_key)
+        extra = "\n🎉 Ошибка по этой теме закрыта!" if was_mistake else ""
+        result_text = f"✅ Верно!\n\nПравильный ответ: {correct_text}{extra}"
     else:
+        add_mistake(call.from_user.id, subj_key, grade_key, topic_key)
         chosen_text = quiz["options"][chosen_idx]
         result_text = (
-            f"❌ Неверно.\n"
+            f"❌ Неверно. (Тема добавлена в «❌ Ошибки» для повторения)\n"
             f"Ваш ответ: {chosen_text}\n"
             f"✅ Правильный ответ: {correct_text}"
         )
@@ -144,7 +156,7 @@ async def check_quiz_answer(call: CallbackQuery):
     await call.answer()
 
 
-# --- БЛОК ТРЕНАЖЁРА С ФИЛЬТРОМ ПО ПРЕДМЕТАМ ---
+# --- ТРЕНАЖЁР С ФИЛЬТРОМ ПО ПРЕДМЕТАМ ---
 
 @router.callback_query(callback_data("trainer_menu"))
 async def show_trainer_menu(call: CallbackQuery):
@@ -204,11 +216,14 @@ async def trainer_check_answer(call: CallbackQuery):
     stats = update_user_score(user.id, display_name, is_correct)
 
     if is_correct:
-        status_line = f"✅ **Верно!** (+1 балл)\nПравильный ответ: {correct_text}"
+        was_mistake = remove_mistake(user.id, subj_key, grade_key, topic_key)
+        extra = " (ошибка закрыта! 🎉)" if was_mistake else ""
+        status_line = f"✅ **Верно!** (+1 балл){extra}\nПравильный ответ: {correct_text}"
     else:
+        add_mistake(user.id, subj_key, grade_key, topic_key)
         chosen_text = quiz["options"][chosen_idx]
         status_line = (
-            f"❌ **Неверно.**\n"
+            f"❌ **Неверно.** (Сохранено в «❌ Ошибки»)\n"
             f"Ваш ответ: {chosen_text}\n"
             f"✅ Правильный ответ: {correct_text}"
         )
@@ -228,25 +243,31 @@ async def trainer_check_answer(call: CallbackQuery):
     await call.answer()
 
 
-@router.callback_query(callback_data("leaderboard"))
-async def show_leaderboard(call: CallbackQuery):
-    leaders = get_leaderboard(10)
-    if not leaders:
-        text = "🏆 **Таблица лидеров пока пуста.**\n\nНажмите «🎯 Тренажёр» и ответьте на первый вопрос, чтобы занять 1-е место!"
-    else:
-        medals = ["🥇", "🥈", "🥉"]
-        lines = ["🏆 **Топ-10 знатоков ЕГЭ/ОГЭ:**\n"]
-        for idx, row in enumerate(leaders):
-            prefix = medals[idx] if idx < 3 else f"{idx + 1}."
-            lines.append(
-                f"{prefix} **{row['full_name']}** — {row['correct_count']} б. (серия: {row['best_streak']} 🔥)"
-            )
-        text = "\n".join(lines)
+# --- РАБОТА НАД ОШИБКАМИ ---
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎯 В тренажёр", callback_data="trainer_menu")],
-        [InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu")],
-    ])
+@router.callback_query(callback_data("mistakes:next"))
+async def mistake_next_question(call: CallbackQuery):
+    user_id = call.from_user.id
+    q = get_random_mistake_quiz(user_id)
+
+    if not q:
+        m_count = get_mistakes_count(user_id)
+        await bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text="🎉 **Отличная работа! У вас нет незакрытых ошибок.**\n\nВсе сложные темы отработаны. Можно переходить в тренажёр за новыми баллами!",
+            reply_markup=subjects_keyboard(CATALOG, m_count),
+        )
+        await call.answer()
+        return
+
+    rem_count = get_mistakes_count(user_id)
+    text = (
+        f"❌ **Работа над ошибками** (осталось тем: {rem_count})\n"
+        f"Предмет: {q['subj_title']} • {q['topic_title']}\n\n"
+        f"❓ {q['question']}"
+    )
+    kb = mistake_options_keyboard(q["subject_key"], q["grade_key"], q["topic_key"], q["options"])
 
     await bot.edit_message_text(
         chat_id=call.message.chat.id,
@@ -257,20 +278,16 @@ async def show_leaderboard(call: CallbackQuery):
     await call.answer()
 
 
-@router.message()
-async def handle_search(message: Message):
-    if not message.text or message.text.startswith("/"):
-        return
+@router.callback_query(callback_data_prefix("m_ans:"))
+async def mistake_check_answer(call: CallbackQuery):
+    parts = call.data.split(":")
+    parts.pop(0)
+    subj_key = parts.pop(0)
+    grade_key = parts.pop(0)
+    topic_key = parts.pop(0)
+    chosen_idx = int(parts.pop(0))
 
-    results = search_topics(CATALOG, message.text)
-    if not results:
-        await message.answer(
-            text=f"По запросу «{message.text}» ничего не найдено. Попробуйте другое слово или откройте меню:",
-            reply_markup=subjects_keyboard(CATALOG),
-        )
-        return
-
-    await message.answer(
-        text=f"🔍 Найдено тем по запросу «{message.text}» ({len(results)}):",
-        reply_markup=search_results_keyboard(results),
-    )
+    topic = CATALOG[subj_key]["grades"][grade_key]["topics"][topic_key]
+    quiz = topic["quiz"]
+    correct_idx = quiz["correct"]
+    correct_text = quiz["options"][correct_idx]
