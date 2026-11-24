@@ -162,7 +162,7 @@ async def show_trainer_menu(call: CallbackQuery):
     await bot.edit_message_text(
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,
-        text="🎯 **Настройка тренажёра**\n\nВыберите предмет для тренировки или запустите общий микс по всем темам:",
+        text="🎯 Настройка тренажёра\n\nВыберите предмет для тренировки или запустите общий микс по всем темам:",
         reply_markup=trainer_filter_keyboard(CATALOG),
     )
     await call.answer()
@@ -179,7 +179,7 @@ async def trainer_next_question(call: CallbackQuery):
 
     mode_label = "Все предметы" if filter_key == "all" else q["subj_title"]
     text = (
-        f"🎯 **Тренажёр** ({mode_label})\n"
+        f"🎯 Тренажёр ({mode_label})\n"
         f"Предмет: {q['subj_title']}\n\n"
         f"❓ {q['question']}"
     )
@@ -211,26 +211,27 @@ async def trainer_check_answer(call: CallbackQuery):
     is_correct = (chosen_idx == correct_idx)
 
     user = call.from_user
-    display_name = getattr(user, "first_name", None) or getattr(user, "username", None) or f"Ученик #{user.id}"
+    raw_name = getattr(user, "first_name", None) or getattr(user, "username", None) or f"Ученик #{user.id}"
+    display_name = str(raw_name).replace("*", "").replace("_", "")
     stats = update_user_score(user.id, display_name, is_correct)
 
     if is_correct:
         was_mistake = remove_mistake(user.id, subj_key, grade_key, topic_key)
         extra = " (ошибка закрыта! 🎉)" if was_mistake else ""
-        status_line = f"✅ **Верно!** (+1 балл){extra}\nПравильный ответ: {correct_text}"
+        status_line = f"✅ Верно! (+1 балл){extra}\nПравильный ответ: {correct_text}"
     else:
         add_mistake(user.id, subj_key, grade_key, topic_key)
         chosen_text = quiz["options"][chosen_idx]
         status_line = (
-            f"❌ **Неверно.** (Сохранено в «❌ Ошибки»)\n"
+            f"❌ Неверно. (Сохранено в «❌ Ошибки»)\n"
             f"Ваш ответ: {chosen_text}\n"
             f"✅ Правильный ответ: {correct_text}"
         )
 
     result_text = (
-        f"🎯 **Результат раунда** (тема: «{topic['title']}»)\n\n"
+        f"🎯 Результат раунда (тема: «{topic['title']}»)\n\n"
         f"{status_line}\n\n"
-        f"📊 Ваш счёт: **{stats['correct']}** из {stats['total']}  |  🔥 Серия: **{stats['streak']}** (рекорд: {stats['best_streak']})"
+        f"📊 Ваш счёт: {stats['correct']} из {stats['total']}  |  🔥 Серия: {stats['streak']} (рекорд: {stats['best_streak']})"
     )
 
     await bot.edit_message_text(
@@ -252,7 +253,7 @@ async def mistake_next_question(call: CallbackQuery):
         await bot.edit_message_text(
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
-            text="🎉 **Отличная работа! У вас нет незакрытых ошибок.**\n\nВсе сложные темы отработаны. Можно переходить в тренажёр за новыми баллами!",
+            text="🎉 Отличная работа! У вас нет незакрытых ошибок.\n\nВсе сложные темы отработаны. Можно переходить в тренажёр за новыми баллами!",
             reply_markup=subjects_keyboard(CATALOG, m_count),
         )
         await call.answer()
@@ -260,7 +261,7 @@ async def mistake_next_question(call: CallbackQuery):
 
     rem_count = get_mistakes_count(user_id)
     text = (
-        f"❌ **Работа над ошибками** (осталось тем: {rem_count})\n"
+        f"❌ Работа над ошибками (осталось тем: {rem_count})\n"
         f"Предмет: {q['subj_title']} • {q['topic_title']}\n\n"
         f"❓ {q['question']}"
     )
@@ -276,7 +277,6 @@ async def mistake_next_question(call: CallbackQuery):
 
 
 @router.callback_query(callback_data_prefix("m_ans:"))
-@router.callback_query(callback_data_prefix("m_ans:"))
 async def mistake_check_answer(call: CallbackQuery):
     parts = call.data.split(":")
     parts.pop(0)
@@ -291,29 +291,3 @@ async def mistake_check_answer(call: CallbackQuery):
     correct_text = quiz["options"][correct_idx]
     user_id = call.from_user.id
 
-    if chosen_idx == correct_idx:
-        remove_mistake(user_id, subj_key, grade_key, topic_key)
-        rem = get_mistakes_count(user_id)
-        status_line = f"✅ **Верно! Ошибка закрыта.**\nПравильный ответ: {correct_text}\n\nОсталось отработать тем: **{rem}**"
-    else:
-        chosen_text = quiz["options"][chosen_idx]
-        rem = get_mistakes_count(user_id)
-        status_line = (
-            f"❌ **Снова неверно.** Тема остаётся в списке ошибок.\n"
-            f"Ваш ответ: {chosen_text}\n"
-            f"✅ Правильный ответ: {correct_text}\n\nОсталось отработать тем: **{rem}**"
-        )
-
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➡️ Следующая ошибка", callback_data="mistakes:next")],
-        [InlineKeyboardButton(text="📖 Открыть шпаргалку по теме", callback_data=f"topic:{subj_key}:{grade_key}:{topic_key}")],
-        [InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu")],
-    ])
-
-    await bot.edit_message_text(
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id,
-        text=f"❌ **Работа над ошибками** («{topic['title']}»)\n\n{status_line}",
-        reply_markup=kb,
-    )
-    await call.answer()

@@ -8,13 +8,26 @@ async def main():
     dp = Dispatcher()
     dp.include_router(user_router)
 
-    # Перезаписываем список команд в меню бота (убирает старую /score)
-    await bot.set_my_commands([
-        BotCommand(command="start", description="Открыть справочник 9–11 классов")
-    ])
+    print("Бот-справочник запущен в щадящем режиме (1 запрос/сек)!")
+    offset = 0
 
-    print("Бот-справочник запущен, меню команд обновлено!")
-    await dp.start_polling(bot)
+    while True:
+        try:
+            # Запрашиваем обновления не чаще 1 раза в секунду
+            updates = await bot.get_updates(offset=offset, timeout=10)
+            for upd in updates:
+                offset = upd.update_id + 1
+                await dp.feed_update(bot, upd)
+        except Exception as e:
+            err_text = str(e)
+            if "429" in err_text:
+                print("Лимит запросов 429 от сервера. Ждём 10 секунд...")
+                await asyncio.sleep(10)
+            else:
+                print(f"Ошибка сети: {err_text}")
+                await asyncio.sleep(2)
+
+        await asyncio.sleep(1.0)
 
 
 if __name__ == "__main__":
