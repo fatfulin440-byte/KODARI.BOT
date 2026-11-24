@@ -97,3 +97,104 @@ def search_topics(catalog: dict, query: str) -> list[dict]:
 
     conn.close()
     return results
+def init_stats_table():
+    """Создаёт таблицу статистики и рейтинга учеников."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_stats (
+            user_id INTEGER PRIMARY KEY,
+            full_name TEXT NOT NULL,
+            correct_count INTEGER DEFAULT 0,
+            total_count INTEGER DEFAULT 0,
+            streak INTEGER DEFAULT 0,
+            best_streak INTEGER DEFAULT 0
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def get_random_quiz() -> dict | None:
+    """Выбирает случайный тестовый вопрос из всей базы данных."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT 
+            t.subject_key, t.grade_key, t.topic_key, t.title AS topic_title,
+            s.title AS subj_title,
+            q.question, q.options_json, q.correct_idx
+        FROM quizzes q
+        JOIN topics t ON t.id = q.topic_id
+        JOIN subjects s ON s.key = t.subject_key
+        ORDER BY RANDOM()
+        LIMIT 1
+    """)
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return None
+    return {
+        "subject_key": row["subject_key"],
+        "grade_key": row["grade_key"],
+        "topic_key": row["topic_key"],
+        "topic_title": row["topic_title"],
+        "subj_title": row["subj_title"],
+        "question": row["question"],
+        "options": json.loads(row["options_json"]),
+        "correct": row["correct_idx"],
+    }
+
+
+def update_user_score(user_id: int, full_name: str, is_correct: bool) -> dict:
+    """Обновляет статистику ученика в SQLite и возвращает актуальные показатели."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT correct_count, total_count, streak, best_streak FROM user_stats WHERE user_id = ?", (user_id,))
+    row = cur.fetchone()
+
+    if row:
+        correct = row["correct_count"] + (1 if is_correct else 0)
+        total = row["total_count"] + 1
+        streak = (row["streak"] + 1) if is_correct else 0
+        best_streak = max(row["best_streak"], streak)
+        cur.execute(
+            """
+            UPDATE user_stats
+            SET full_name = ?, correct_count = ?, total_count = ?, streak = ?, best_streak = ?
+            WHERE user_id = ?
+            """,
+            (full_name, correct, total, streak, best_streak, user_id),
+        )
+    else:
+        correct = 1 if is_correct else 0
+        total = 1
+        streak = 1 if is_correct else 0
+        best_streak = streak
+        cur.execute(
+            """
+            INSERT INTO user_stats (user_id, full_name, correct_count, total_count, streak, best_streak)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (user_id, full_name, correct, total, streak, best_streak),
+        )
+
+    conn.commit()
+    conn.close()
+    return {"correct": correct, "total": total, "streak": streak, "best_streak": best_streak}
+
+
+def get_leaderboard(limit: int = 10) -> list[dict]:
+    """Возвращает топ учеников по количеству правильных ответов."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT full_name, correct_count, total_count, best_streak
+        FROM user_stats
+        WHERE correct_count > 0
+        ORDER BY correct_count DESC, best_streak DESC
+        LIMIT ?
+    """, (limit,))
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows

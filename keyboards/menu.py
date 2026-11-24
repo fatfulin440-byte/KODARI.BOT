@@ -91,3 +91,46 @@ def search_results_keyboard(results: list[dict]) -> InlineKeyboardMarkup:
     ]
     buttons.append([InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+def subjects_keyboard(catalog: dict) -> InlineKeyboardMarkup:
+    items = list(catalog.items())
+    buttons = []
+    # Раскладываем предметы по 2 кнопки в ряд для компактности
+    for i in range(0, len(items), 2):
+        row = [
+            InlineKeyboardButton(text=subj["title"], callback_data=f"subj:{key}")
+            for key, subj in items[i:i + 2]
+        ]
+        buttons.append(row)
+
+    buttons.append([
+        InlineKeyboardButton(text="🎯 Тренажёр", callback_data="trainer:next"),
+        InlineKeyboardButton(text="🏆 Лидеры", callback_data="leaderboard"),
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+def trainer_options_keyboard(
+    subject_key: str,
+    grade_key: str,
+    topic_key: str,
+    options: list[str],
+) -> InlineKeyboardMarkup:
+    buttons = [
+        [InlineKeyboardButton(text=opt, callback_data=f"tr_ans:{subject_key}:{grade_key}:{topic_key}:{idx}")]
+        for idx, opt in enumerate(options)
+    ]
+    buttons.append([InlineKeyboardButton(text="🏠 Закончить и в меню", callback_data="menu")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def trainer_after_answer_keyboard(
+    subject_key: str,
+    grade_key: str,
+    topic_key: str,
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➡️ Следующий вопрос", callback_data="trainer:next")],
+        [InlineKeyboardButton(text="📖 Открыть шпаргалку по теме", callback_data=f"topic:{subject_key}:{grade_key}:{topic_key}")],
+        [
+            InlineKeyboardButton(text="🏆 Лидеры", callback_data="leaderboard"),
+            InlineKeyboardButton(text="🏠 В меню", callback_data="menu"),
+        ],
+    ])
