@@ -115,21 +115,37 @@ def init_stats_table():
     conn.close()
 
 
-def get_random_quiz() -> dict | None:
-    """Выбирает случайный тестовый вопрос из всей базы данных."""
+def get_random_quiz(subject_key: str | None = None) -> dict | None:
+    """Выбирает случайный тестовый вопрос (по всем предметам или по конкретному)."""
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("""
-        SELECT 
-            t.subject_key, t.grade_key, t.topic_key, t.title AS topic_title,
-            s.title AS subj_title,
-            q.question, q.options_json, q.correct_idx
-        FROM quizzes q
-        JOIN topics t ON t.id = q.topic_id
-        JOIN subjects s ON s.key = t.subject_key
-        ORDER BY RANDOM()
-        LIMIT 1
-    """)
+
+    if subject_key and subject_key != "all":
+        cur.execute("""
+            SELECT 
+                t.subject_key, t.grade_key, t.topic_key, t.title AS topic_title,
+                s.title AS subj_title,
+                q.question, q.options_json, q.correct_idx
+            FROM quizzes q
+            JOIN topics t ON t.id = q.topic_id
+            JOIN subjects s ON s.key = t.subject_key
+            WHERE t.subject_key = ?
+            ORDER BY RANDOM()
+            LIMIT 1
+        """, (subject_key,))
+    else:
+        cur.execute("""
+            SELECT 
+                t.subject_key, t.grade_key, t.topic_key, t.title AS topic_title,
+                s.title AS subj_title,
+                q.question, q.options_json, q.correct_idx
+            FROM quizzes q
+            JOIN topics t ON t.id = q.topic_id
+            JOIN subjects s ON s.key = t.subject_key
+            ORDER BY RANDOM()
+            LIMIT 1
+        """)
+
     row = cur.fetchone()
     conn.close()
     if not row:
@@ -144,6 +160,7 @@ def get_random_quiz() -> dict | None:
         "options": json.loads(row["options_json"]),
         "correct": row["correct_idx"],
     }
+
 
 
 def update_user_score(user_id: int, full_name: str, is_correct: bool) -> dict:

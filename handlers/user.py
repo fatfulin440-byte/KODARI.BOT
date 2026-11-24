@@ -1,5 +1,6 @@
 from pykodaribot import Router, Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from pykodaribot.filters import command, callback_data, callback_data_prefix
+
 from config import bot
 from services.loader import (
     load_catalog,
@@ -16,29 +17,13 @@ from keyboards.menu import (
     back_to_topics_keyboard,
     quiz_options_keyboard,
     search_results_keyboard,
+    trainer_filter_keyboard,
     trainer_options_keyboard,
     trainer_after_answer_keyboard,
 )
 
 router = Router()
 init_stats_table()
-CATALOG = load_catalog()
-
-from pykodaribot import Router, Message, CallbackQuery
-from pykodaribot.filters import command, callback_data, callback_data_prefix
-
-from config import bot
-from services.loader import load_catalog, search_topics
-from keyboards.menu import (
-    subjects_keyboard,
-    grades_keyboard,
-    topics_keyboard,
-    back_to_topics_keyboard,
-    quiz_options_keyboard,
-    search_results_keyboard,
-)
-
-router = Router()
 CATALOG = load_catalog()
 
 
@@ -49,6 +34,11 @@ async def cmd_start(message: Message):
              "Выберите предмет из меню ниже или просто напишите слово для поиска (например: «дискриминант»):",
         reply_markup=subjects_keyboard(CATALOG),
     )
+
+
+@router.callback_query(callback_data("noop"))
+async def noop_callback(call: CallbackQuery):
+    await call.answer()
 
 
 @router.callback_query(callback_data("menu"))
@@ -79,7 +69,7 @@ async def select_subject(call: CallbackQuery):
 @router.callback_query(callback_data_prefix("grade:"))
 async def select_grade(call: CallbackQuery):
     parts = call.data.split(":")
-    parts.pop(0)  # убираем слово "grade"
+    parts.pop(0)
     subj_key = parts.pop(0)
     grade_key = parts.pop(0)
     page = int(parts.pop(0)) if parts else 0
@@ -93,8 +83,6 @@ async def select_grade(call: CallbackQuery):
         reply_markup=topics_keyboard(subj_key, grade_key, grade, page),
     )
     await call.answer()
-
-
 
 
 @router.callback_query(callback_data_prefix("topic:"))
@@ -112,7 +100,6 @@ async def show_topic(call: CallbackQuery):
     await call.answer()
 
 
-# Запуск теста по выбранной теме (quiz:math:9:quad)
 @router.callback_query(callback_data_prefix("quiz:"))
 async def start_quiz(call: CallbackQuery):
     _, subj_key, grade_key, topic_key = call.data.split(":")
@@ -128,7 +115,6 @@ async def start_quiz(call: CallbackQuery):
     await call.answer()
 
 
-# Проверка ответа пользователя (ans:math:9:quad:2)
 @router.callback_query(callback_data_prefix("ans:"))
 async def check_quiz_answer(call: CallbackQuery):
     _, subj_key, grade_key, topic_key, chosen_str = call.data.split(":")
@@ -157,39 +143,51 @@ async def check_quiz_answer(call: CallbackQuery):
     )
     await call.answer()
 
-# Запуск / следующий случайный вопрос тренажёра
-@router.callback_query(callback_data("trainer:next"))
-async def trainer_next_question(call: CallbackQuery):
-    q = get_random_quiz()
-    if not q:
-        await call.answer("В базе пока нет тестовых вопросов.", show_alert=True)
-        return
 
-    text = (
-        f"🎯 **Тренажёр ЕГЭ/ОГЭ**\n"
-        f"Предмет: {q['subj_title']}\n\n"
-        f"❓ {q['question']}"
+# --- БЛОК ТРЕНАЖЁРА С ФИЛЬТРОМ ПО ПРЕДМЕТАМ ---
+
+@router.callback_query(callback_data("trainer_menu"))
+async def show_trainer_menu(call: CallbackQuery):
+    await bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text="🎯 **Настройка тренажёра**\n\nВыберите предмет для тренировки или запустите общий микс по всем темам:",
+        reply_markup=trainer_filter_keyboard(CATALOG),
     )
-    kb = trainer_options_keyboard(q["subject_key"], q["grade_key"], q["topic_key"], q["options"])
-
-    try:
-        await bot.edit_message_text(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text=text,
-            reply_markup=kb,
-        )
-    except Exception:
-        await bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.message_id)
-        await bot.send_message(chat_id=call.message.chat.id, text=text, reply_markup=kb)
     await call.answer()
 
 
-# Проверка ответа в тренажёре и обновление рейтинга
+@router.callback_query(callback_data_prefix("trainer:"))
+async def trainer_next_question(call: CallbackQuery):
+    _, filter_key = call.data.split(":")
+    q = get_random_quiz(filter_key)
+
+    if not q:
+        await call.answer("По этому предмету пока нет тестовых вопросов.", show_alert=True)
+        return
+
+    mode_label = "Все предметы" if filter_key == "all" else q["subj_title"]
+    text = (
+        f"🎯 **Тренажёр** ({mode_label})\n"
+        f"Предмет: {q['subj_title']}\n\n"
+        f"❓ {q['question']}"
+    )
+    kb = trainer_options_keyboard(filter_key, q["subject_key"], q["grade_key"], q["topic_key"], q["options"])
+
+    await bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=text,
+        reply_markup=kb,
+    )
+    await call.answer()
+
+
 @router.callback_query(callback_data_prefix("tr_ans:"))
 async def trainer_check_answer(call: CallbackQuery):
     parts = call.data.split(":")
-    parts.pop(0)  # "tr_ans"
+    parts.pop(0)
+    filter_key = parts.pop(0)
     subj_key = parts.pop(0)
     grade_key = parts.pop(0)
     topic_key = parts.pop(0)
@@ -201,10 +199,8 @@ async def trainer_check_answer(call: CallbackQuery):
     correct_text = quiz["options"][correct_idx]
     is_correct = (chosen_idx == correct_idx)
 
-    # Формируем имя пользователя для таблицы лидеров
     user = call.from_user
     display_name = getattr(user, "first_name", None) or getattr(user, "username", None) or f"Ученик #{user.id}"
-
     stats = update_user_score(user.id, display_name, is_correct)
 
     if is_correct:
@@ -227,12 +223,11 @@ async def trainer_check_answer(call: CallbackQuery):
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,
         text=result_text,
-        reply_markup=trainer_after_answer_keyboard(subj_key, grade_key, topic_key),
+        reply_markup=trainer_after_answer_keyboard(filter_key, subj_key, grade_key, topic_key),
     )
     await call.answer()
 
 
-# Таблица лидеров
 @router.callback_query(callback_data("leaderboard"))
 async def show_leaderboard(call: CallbackQuery):
     leaders = get_leaderboard(10)
@@ -249,7 +244,7 @@ async def show_leaderboard(call: CallbackQuery):
         text = "\n".join(lines)
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎯 В тренажёр", callback_data="trainer:next")],
+        [InlineKeyboardButton(text="🎯 В тренажёр", callback_data="trainer_menu")],
         [InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu")],
     ])
 
@@ -260,6 +255,7 @@ async def show_leaderboard(call: CallbackQuery):
         reply_markup=kb,
     )
     await call.answer()
+
 
 @router.message()
 async def handle_search(message: Message):

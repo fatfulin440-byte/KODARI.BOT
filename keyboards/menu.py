@@ -1,13 +1,22 @@
 from pykodaribot import InlineKeyboardMarkup, InlineKeyboardButton
 
-TOPICS_PER_PAGE = 5  # Сколько тем показывать на одной странице
+TOPICS_PER_PAGE = 5
 
 
 def subjects_keyboard(catalog: dict) -> InlineKeyboardMarkup:
-    buttons = [
-        [InlineKeyboardButton(text=subj["title"], callback_data=f"subj:{key}")]
-        for key, subj in catalog.items()
-    ]
+    items = list(catalog.items())
+    buttons = []
+    for i in range(0, len(items), 2):
+        row = [
+            InlineKeyboardButton(text=subj["title"], callback_data=f"subj:{key}")
+            for key, subj in items[i:i + 2]
+        ]
+        buttons.append(row)
+
+    buttons.append([
+        InlineKeyboardButton(text="🎯 Тренажёр", callback_data="trainer_menu"),
+        InlineKeyboardButton(text="🏆 Лидеры", callback_data="leaderboard"),
+    ])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -37,7 +46,6 @@ def topics_keyboard(subject_key: str, grade_key: str, grade_data: dict, page: in
         nav_row = []
         if page > 0:
             nav_row.append(InlineKeyboardButton(text="⬅️ Пред.", callback_data=f"grade:{subject_key}:{grade_key}:{page - 1}"))
-        nav_row.append(InlineKeyboardButton(text=f"{page + 1}/{total_pages}", callback_data="noop"))
         if page < total_pages - 1:
             nav_row.append(InlineKeyboardButton(text="След. ➡️", callback_data=f"grade:{subject_key}:{grade_key}:{page + 1}"))
         buttons.append(nav_row)
@@ -91,46 +99,52 @@ def search_results_keyboard(results: list[dict]) -> InlineKeyboardMarkup:
     ]
     buttons.append([InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
-def subjects_keyboard(catalog: dict) -> InlineKeyboardMarkup:
+
+
+def trainer_filter_keyboard(catalog: dict) -> InlineKeyboardMarkup:
+    buttons = [
+        [InlineKeyboardButton(text="🎲 Все предметы вперемешку", callback_data="trainer:all")]
+    ]
     items = list(catalog.items())
-    buttons = []
-    # Раскладываем предметы по 2 кнопки в ряд для компактности
     for i in range(0, len(items), 2):
         row = [
-            InlineKeyboardButton(text=subj["title"], callback_data=f"subj:{key}")
+            InlineKeyboardButton(text=subj["title"], callback_data=f"trainer:{key}")
             for key, subj in items[i:i + 2]
         ]
         buttons.append(row)
-
-    buttons.append([
-        InlineKeyboardButton(text="🎯 Тренажёр", callback_data="trainer:next"),
-        InlineKeyboardButton(text="🏆 Лидеры", callback_data="leaderboard"),
-    ])
+    buttons.append([InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
 def trainer_options_keyboard(
+    filter_key: str,
     subject_key: str,
     grade_key: str,
     topic_key: str,
     options: list[str],
 ) -> InlineKeyboardMarkup:
     buttons = [
-        [InlineKeyboardButton(text=opt, callback_data=f"tr_ans:{subject_key}:{grade_key}:{topic_key}:{idx}")]
+        [InlineKeyboardButton(text=opt, callback_data=f"tr_ans:{filter_key}:{subject_key}:{grade_key}:{topic_key}:{idx}")]
         for idx, opt in enumerate(options)
     ]
-    buttons.append([InlineKeyboardButton(text="🏠 Закончить и в меню", callback_data="menu")])
+    buttons.append([
+        InlineKeyboardButton(text="🔄 Сменить предмет", callback_data="trainer_menu"),
+        InlineKeyboardButton(text="🏠 В меню", callback_data="menu"),
+    ])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def trainer_after_answer_keyboard(
+    filter_key: str,
     subject_key: str,
     grade_key: str,
     topic_key: str,
 ) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➡️ Следующий вопрос", callback_data="trainer:next")],
+        [InlineKeyboardButton(text="➡️ Следующий вопрос", callback_data=f"trainer:{filter_key}")],
         [InlineKeyboardButton(text="📖 Открыть шпаргалку по теме", callback_data=f"topic:{subject_key}:{grade_key}:{topic_key}")],
         [
-            InlineKeyboardButton(text="🏆 Лидеры", callback_data="leaderboard"),
+            InlineKeyboardButton(text="🔄 Сменить предмет", callback_data="trainer_menu"),
             InlineKeyboardButton(text="🏠 В меню", callback_data="menu"),
         ],
     ])
