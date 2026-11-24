@@ -14,6 +14,7 @@ from services.loader import (
     remove_mistake,
     get_mistakes_count,
     get_random_mistake_quiz,
+    get_user_profile,
 )
 from keyboards.menu import (
     subjects_keyboard,
@@ -156,8 +157,6 @@ async def check_quiz_answer(call: CallbackQuery):
     await call.answer()
 
 
-# --- ТРЕНАЖЁР С ФИЛЬТРОМ ПО ПРЕДМЕТАМ ---
-
 @router.callback_query(callback_data("trainer_menu"))
 async def show_trainer_menu(call: CallbackQuery):
     await bot.edit_message_text(
@@ -243,8 +242,6 @@ async def trainer_check_answer(call: CallbackQuery):
     await call.answer()
 
 
-# --- РАБОТА НАД ОШИБКАМИ ---
-
 @router.callback_query(callback_data("mistakes:next"))
 async def mistake_next_question(call: CallbackQuery):
     user_id = call.from_user.id
@@ -279,6 +276,7 @@ async def mistake_next_question(call: CallbackQuery):
 
 
 @router.callback_query(callback_data_prefix("m_ans:"))
+@router.callback_query(callback_data_prefix("m_ans:"))
 async def mistake_check_answer(call: CallbackQuery):
     parts = call.data.split(":")
     parts.pop(0)
@@ -291,3 +289,31 @@ async def mistake_check_answer(call: CallbackQuery):
     quiz = topic["quiz"]
     correct_idx = quiz["correct"]
     correct_text = quiz["options"][correct_idx]
+    user_id = call.from_user.id
+
+    if chosen_idx == correct_idx:
+        remove_mistake(user_id, subj_key, grade_key, topic_key)
+        rem = get_mistakes_count(user_id)
+        status_line = f"✅ **Верно! Ошибка закрыта.**\nПравильный ответ: {correct_text}\n\nОсталось отработать тем: **{rem}**"
+    else:
+        chosen_text = quiz["options"][chosen_idx]
+        rem = get_mistakes_count(user_id)
+        status_line = (
+            f"❌ **Снова неверно.** Тема остаётся в списке ошибок.\n"
+            f"Ваш ответ: {chosen_text}\n"
+            f"✅ Правильный ответ: {correct_text}\n\nОсталось отработать тем: **{rem}**"
+        )
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➡️ Следующая ошибка", callback_data="mistakes:next")],
+        [InlineKeyboardButton(text="📖 Открыть шпаргалку по теме", callback_data=f"topic:{subj_key}:{grade_key}:{topic_key}")],
+        [InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu")],
+    ])
+
+    await bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=f"❌ **Работа над ошибками** («{topic['title']}»)\n\n{status_line}",
+        reply_markup=kb,
+    )
+    await call.answer()

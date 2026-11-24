@@ -17,6 +17,9 @@ def subjects_keyboard(catalog: dict, mistakes_count: int = 0) -> InlineKeyboardM
     buttons.append([
         InlineKeyboardButton(text="🎯 Тренажёр", callback_data="trainer_menu"),
         InlineKeyboardButton(text=mistakes_label, callback_data="mistakes:next"),
+    ])
+    buttons.append([
+        InlineKeyboardButton(text="👤 Профиль", callback_data="profile"),
         InlineKeyboardButton(text="🏆 Лидеры", callback_data="leaderboard"),
     ])
     return InlineKeyboardMarkup(inline_keyboard=buttons)

@@ -306,3 +306,62 @@ def get_random_mistake_quiz(user_id: int) -> dict | None:
         "options": json.loads(row["options_json"]),
         "correct": row["correct_idx"],
     }
+def get_user_profile(user_id: int, default_name: str) -> dict:
+    """Собирает полную статистику, место в рейтинге и достижения ученика."""
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        "SELECT full_name, correct_count, total_count, streak, best_streak FROM user_stats WHERE user_id = ?",
+        (user_id,),
+    )
+    row = cur.fetchone()
+
+    if row:
+        full_name = row["full_name"]
+        correct = row["correct_count"]
+        total = row["total_count"]
+        streak = row["streak"]
+        best_streak = row["best_streak"]
+
+        cur.execute("SELECT COUNT(*) AS cnt FROM user_stats WHERE correct_count > ?", (correct,))
+        rank = cur.fetchone()["cnt"] + 1
+    else:
+        full_name = default_name
+        correct = 0
+        total = 0
+        streak = 0
+        best_streak = 0
+        rank = None
+
+    cur.execute("SELECT COUNT(*) AS cnt FROM user_mistakes WHERE user_id = ?", (user_id,))
+    mistakes = cur.fetchone()["cnt"]
+    conn.close()
+
+    accuracy = round((correct / total) * 100) if total > 0 else 0
+
+    achievements = []
+    if total >= 1:
+        achievements.append("🌱 **Первый шаг** — решён первый тест")
+    if best_streak >= 3:
+        achievements.append("🔥 **В ударе** — 3 правильных ответа подряд")
+    if best_streak >= 10:
+        achievements.append("⚡ **Неудержимый** — 10 правильных ответов подряд")
+    if correct >= 25:
+        achievements.append("🧠 **Знаток** — 25 правильных ответов")
+    if correct >= 100:
+        achievements.append("🎓 **Магистр ЕГЭ/ОГЭ** — 100 правильных ответов")
+    if total >= 10 and mistakes == 0:
+        achievements.append("💎 **Без пробелов** — 0 незакрытых ошибок")
+
+    return {
+        "full_name": full_name,
+        "correct": correct,
+        "total": total,
+        "accuracy": accuracy,
+        "streak": streak,
+        "best_streak": best_streak,
+        "rank": rank,
+        "mistakes": mistakes,
+        "achievements": achievements,
+    }
