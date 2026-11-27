@@ -1,4 +1,4 @@
-from pykodaribot import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 TOPICS_PER_PAGE = 5
 

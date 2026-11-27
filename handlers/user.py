@@ -1,5 +1,6 @@
-from pykodaribot import Router, Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from pykodaribot.filters import command, callback_data, callback_data_prefix
+from aiogram import Router, F
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.filters import Command
 
 from config import bot
 from services.loader import (
@@ -35,7 +36,7 @@ init_mistakes_table()
 CATALOG = load_catalog()
 
 
-@router.message(command("start"))
+@router.message(Command("start"))
 async def cmd_start(message: Message):
     m_count = get_mistakes_count(message.from_user.id)
     await message.answer(
@@ -45,12 +46,12 @@ async def cmd_start(message: Message):
     )
 
 
-@router.callback_query(callback_data("noop"))
+@router.callback_query(F.data == "noop")
 async def noop_callback(call: CallbackQuery):
     await call.answer()
 
 
-@router.callback_query(callback_data("menu"))
+@router.callback_query(F.data == "menu")
 async def go_main_menu(call: CallbackQuery):
     m_count = get_mistakes_count(call.from_user.id)
     await bot.edit_message_text(
@@ -62,7 +63,7 @@ async def go_main_menu(call: CallbackQuery):
     await call.answer()
 
 
-@router.callback_query(callback_data_prefix("subj:"))
+@router.callback_query(F.data.startswith("subj:"))
 async def select_subject(call: CallbackQuery):
     _, subj_key = call.data.split(":")
     subject = CATALOG[subj_key]
@@ -76,7 +77,7 @@ async def select_subject(call: CallbackQuery):
     await call.answer()
 
 
-@router.callback_query(callback_data_prefix("grade:"))
+@router.callback_query(F.data.startswith("grade:"))
 async def select_grade(call: CallbackQuery):
     parts = call.data.split(":")
     parts.pop(0)
@@ -95,7 +96,7 @@ async def select_grade(call: CallbackQuery):
     await call.answer()
 
 
-@router.callback_query(callback_data_prefix("topic:"))
+@router.callback_query(F.data.startswith("topic:"))
 async def show_topic(call: CallbackQuery):
     _, subj_key, grade_key, topic_key = call.data.split(":")
     topic = CATALOG[subj_key]["grades"][grade_key]["topics"][topic_key]
@@ -110,7 +111,7 @@ async def show_topic(call: CallbackQuery):
     await call.answer()
 
 
-@router.callback_query(callback_data_prefix("quiz:"))
+@router.callback_query(F.data.startswith("quiz:"))
 async def start_quiz(call: CallbackQuery):
     _, subj_key, grade_key, topic_key = call.data.split(":")
     topic = CATALOG[subj_key]["grades"][grade_key]["topics"][topic_key]
@@ -125,7 +126,7 @@ async def start_quiz(call: CallbackQuery):
     await call.answer()
 
 
-@router.callback_query(callback_data_prefix("ans:"))
+@router.callback_query(F.data.startswith("ans:"))
 async def check_quiz_answer(call: CallbackQuery):
     _, subj_key, grade_key, topic_key, chosen_str = call.data.split(":")
     chosen_idx = int(chosen_str)
@@ -157,7 +158,7 @@ async def check_quiz_answer(call: CallbackQuery):
     await call.answer()
 
 
-@router.callback_query(callback_data("trainer_menu"))
+@router.callback_query(F.data == "trainer_menu")
 async def show_trainer_menu(call: CallbackQuery):
     await bot.edit_message_text(
         chat_id=call.message.chat.id,
@@ -168,7 +169,7 @@ async def show_trainer_menu(call: CallbackQuery):
     await call.answer()
 
 
-@router.callback_query(callback_data_prefix("trainer:"))
+@router.callback_query(F.data.startswith("trainer:"))
 async def trainer_next_question(call: CallbackQuery):
     _, filter_key = call.data.split(":")
     q = get_random_quiz(filter_key)
@@ -194,7 +195,7 @@ async def trainer_next_question(call: CallbackQuery):
     await call.answer()
 
 
-@router.callback_query(callback_data_prefix("tr_ans:"))
+@router.callback_query(F.data.startswith("tr_ans:"))
 async def trainer_check_answer(call: CallbackQuery):
     parts = call.data.split(":")
     parts.pop(0)
@@ -243,7 +244,7 @@ async def trainer_check_answer(call: CallbackQuery):
     await call.answer()
 
 
-@router.callback_query(callback_data("mistakes:next"))
+@router.callback_query(F.data == "mistakes:next")
 async def mistake_next_question(call: CallbackQuery):
     user_id = call.from_user.id
     q = get_random_mistake_quiz(user_id)
@@ -276,7 +277,7 @@ async def mistake_next_question(call: CallbackQuery):
     await call.answer()
 
 
-@router.callback_query(callback_data_prefix("m_ans:"))
+@router.callback_query(F.data.startswith("m_ans:"))
 async def mistake_check_answer(call: CallbackQuery):
     parts = call.data.split(":")
     parts.pop(0)
@@ -291,3 +292,29 @@ async def mistake_check_answer(call: CallbackQuery):
     correct_text = quiz["options"][correct_idx]
     user_id = call.from_user.id
 
+    if chosen_idx == correct_idx:
+        remove_mistake(user_id, subj_key, grade_key, topic_key)
+        rem = get_mistakes_count(user_id)
+        status_line = f"✅ Верно! Ошибка закрыта.\nПравильный ответ: {correct_text}\n\nОсталось отработать тем: {rem}"
+    else:
+        chosen_text = quiz["options"][chosen_idx]
+        rem = get_mistakes_count(user_id)
+        status_line = (
+            f"❌ Снова неверно. Тема остаётся в списке ошибок.\n"
+            f"Ваш ответ: {chosen_text}\n"
+            f"✅ Правильный ответ: {correct_text}\n\nОсталось отработать тем: {rem}"
+        )
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➡️ Следующая ошибка", callback_data="mistakes:next")],
+        [InlineKeyboardButton(text="📖 Открыть шпаргалку по теме", callback_data=f"topic:{subj_key}:{grade_key}:{topic_key}")],
+        [InlineKeyboardButton(text="🏠 В главное меню", callback_data="menu")],
+    ])
+
+    await bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=f"❌ Работа над ошибками («{topic['title']}»)\n\n{status_line}",
+        reply_markup=kb,
+    )
+    await call.answer()
